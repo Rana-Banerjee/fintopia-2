@@ -1,15 +1,271 @@
 "use client";
 
-import { useState } from "react";
+import { useState } from 'react';
+import { useLocalStorage } from './hooks/useLocalStorage';
+import { AssetLiability, IncomeExpense, Loan } from './types';
+import AssetLiabilityForm from './components/AssetLiabilityForm';
+import IncomeExpenseForm from './components/IncomeExpenseForm';
+import LoanForm from './components/LoanForm';
+import SortableAssetList from './components/SortableList';
+import SortableIncomeExpenseList from './components/SortableIncomeExpenseList';
+import SortableLoanList from './components/SortableLoanList';
 
 const TABS = ["Assets", "Liabilities", "Incomes", "Expenses", "Loans"] as const;
 
+type TabType = typeof TABS[number];
+
+type EditableItem = AssetLiability | IncomeExpense | Loan | null;
+
 export default function Home() {
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<(typeof TABS)[number]>("Assets");
+  const [activeTab, setActiveTab] = useState<TabType>("Assets");
+  const [showForm, setShowForm] = useState(false);
+  const [editingItem, setEditingItem] = useState<EditableItem>(null);
+
+  const [assetsLiabilities, setAssetsLiabilities] = useLocalStorage<AssetLiability[]>('fintopia-assets-liabilities', []);
+  const [incomesExpenses, setIncomesExpenses] = useLocalStorage<IncomeExpense[]>('fintopia-incomes-expenses', []);
+  const [loans, setLoans] = useLocalStorage<Loan[]>('fintopia-loans', []);
+
+  const currentAssets = assetsLiabilities.filter((a) => a.type === 'Asset');
+  const currentLiabilities = assetsLiabilities.filter((a) => a.type === 'Liability');
+
+  const handleAssetLiabilitySubmit = (item: AssetLiability) => {
+    if (editingItem) {
+      setAssetsLiabilities((prev) =>
+        prev.map((a) => (a.id === item.id ? item : a))
+      );
+    } else {
+      setAssetsLiabilities((prev) => [...prev, item]);
+    }
+    setShowForm(false);
+    setEditingItem(null);
+  };
+
+  const handleIncomeExpenseSubmit = (item: IncomeExpense) => {
+    if (editingItem) {
+      setIncomesExpenses((prev) =>
+        prev.map((i) => (i.id === item.id ? item : i))
+      );
+    } else {
+      setIncomesExpenses((prev) => [...prev, item]);
+    }
+    setShowForm(false);
+    setEditingItem(null);
+  };
+
+  const handleLoanSubmit = (item: Loan) => {
+    if (editingItem) {
+      setLoans((prev) => prev.map((l) => (l.id === item.id ? item : l)));
+    } else {
+      setLoans((prev) => [...prev, item]);
+    }
+    setShowForm(false);
+    setEditingItem(null);
+  };
+
+  const handleEdit = (item: EditableItem) => {
+    if (item) {
+      setEditingItem(item);
+      setShowForm(true);
+    }
+  };
+
+  const handleDelete = (id: string, type: string) => {
+    if (type === 'asset-liability') {
+      setAssetsLiabilities((prev) => prev.filter((a) => a.id !== id));
+    } else if (type === 'income-expense') {
+      setIncomesExpenses((prev) => prev.filter((i) => i.id !== id));
+    } else if (type === 'loan') {
+      setLoans((prev) => prev.filter((l) => l.id !== id));
+    }
+  };
+
+  const handleReorder = (type: string, items: AssetLiability[] | IncomeExpense[] | Loan[]) => {
+    if (type === 'asset-liability') {
+      setAssetsLiabilities(items as AssetLiability[]);
+    } else if (type === 'income-expense') {
+      setIncomesExpenses(items as IncomeExpense[]);
+    } else if (type === 'loan') {
+      setLoans(items as Loan[]);
+    }
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setShowForm(false);
+    setEditingItem(null);
+  };
+
+  const renderTabContent = () => {
+    if (showForm) {
+      switch (activeTab) {
+        case 'Assets':
+        case 'Liabilities':
+          return (
+            <AssetLiabilityForm
+              onSubmit={handleAssetLiabilitySubmit}
+              onCancel={() => {
+                setShowForm(false);
+                setEditingItem(null);
+              }}
+              editItem={editingItem as AssetLiability | undefined}
+              defaultType={activeTab === 'Assets' ? 'Asset' : 'Liability'}
+            />
+          );
+        case 'Incomes':
+        case 'Expenses':
+          return (
+            <IncomeExpenseForm
+              onSubmit={handleIncomeExpenseSubmit}
+              onCancel={() => {
+                setShowForm(false);
+                setEditingItem(null);
+              }}
+              editItem={editingItem as IncomeExpense | undefined}
+              assets={currentAssets}
+              defaultType={activeTab === 'Incomes' ? 'Income' : 'Expense'}
+            />
+          );
+        case 'Loans':
+          return (
+            <LoanForm
+              onSubmit={handleLoanSubmit}
+              onCancel={() => {
+                setShowForm(false);
+                setEditingItem(null);
+              }}
+              editItem={editingItem as Loan | undefined}
+            />
+          );
+      }
+    }
+
+    const listSection = <T extends AssetLiability | IncomeExpense | Loan>(title: string, items: T[], type: string) => (
+      <div className="mb-4">
+        <h3 className="text-sm font-semibold text-gray-700 mb-2"></h3>
+        {type === 'asset-liability' && (
+          <SortableAssetList
+            items={items as AssetLiability[]}
+            onReorder={(newItems) => handleReorder('asset-liability', newItems)}
+            onEdit={handleEdit}
+            onDelete={(id) => handleDelete(id, 'asset-liability')}
+          />
+        )}
+        {type === 'income-expense' && (
+          <SortableIncomeExpenseList
+            items={items as IncomeExpense[]}
+            onReorder={(newItems) => handleReorder('income-expense', newItems)}
+            onEdit={handleEdit}
+            onDelete={(id) => handleDelete(id, 'income-expense')}
+          />
+        )}
+        {type === 'loan' && (
+          <SortableLoanList
+            items={items as Loan[]}
+            onReorder={(newItems) => handleReorder('loan', newItems)}
+            onEdit={handleEdit}
+            onDelete={(id) => handleDelete(id, 'loan')}
+          />
+        )}
+      </div>
+    );
+
+    switch (activeTab) {
+      case 'Assets':
+        return (
+          <div>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-gray-800"></h3>
+              <button
+                onClick={() => setShowForm(true)}
+                className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Add
+              </button>
+            </div>
+            {listSection('Assets', currentAssets, 'asset-liability')}
+          </div>
+        );
+      case 'Liabilities':
+        return (
+          <div>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-gray-800"></h3>
+              <button
+                onClick={() => setShowForm(true)}
+                className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Add
+              </button>
+            </div>
+            {listSection('Liabilities', currentLiabilities, 'asset-liability')}
+          </div>
+        );
+      case 'Incomes':
+        return (
+          <div>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-gray-800"></h3>
+              <button
+                onClick={() => setShowForm(true)}
+                className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Add
+              </button>
+            </div>
+            {listSection('Incomes', incomesExpenses.filter(i => i.type === 'Income'), 'income-expense')}
+          </div>
+        );
+      case 'Expenses':
+        return (
+          <div>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-gray-800"></h3>
+              <button
+                onClick={() => setShowForm(true)}
+                className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Add
+              </button>
+            </div>
+            {listSection('Expenses', incomesExpenses.filter(i => i.type === 'Expense'), 'income-expense')}
+          </div>
+        );
+      case 'Loans':
+        return (
+          <div>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-gray-800"></h3>
+              <button
+                onClick={() => setShowForm(true)}
+                className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Add
+              </button>
+            </div>
+            {listSection('Loans', loans, 'loan')}
+          </div>
+        );
+    }
+  };
 
   return (
-    <main className="min-h-screen p-8">
+    <main className="min-h-screen bg-gray-50 p-8">
       <div className="relative max-w-4xl mx-auto">
         <button
           onClick={() => setIsModalOpen(true)}
@@ -37,29 +293,29 @@ export default function Home() {
           </svg>
         </button>
 
-        <h1 className="text-3xl font-bold">Fintopia</h1>
+        <h1 className="text-3xl font-bold text-gray-900">Fintopia</h1>
         <p className="text-gray-600 mt-2">Your personal finance dashboard</p>
       </div>
 
       {isModalOpen && (
         <div
-          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-          onClick={() => setIsModalOpen(false)}
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          onClick={handleCloseModal}
         >
           <div
-            className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[80vh] overflow-hidden"
+            className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[85vh] overflow-hidden flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between p-4 border-b">
-              <h2 className="text-lg font-semibold">Settings</h2>
+            <div className="flex items-center justify-between p-4 border-b bg-gray-50">
+              <h2 className="text-lg font-semibold text-gray-800">Settings</h2>
               <button
-                onClick={() => setIsModalOpen(false)}
-                className="p-1 hover:bg-gray-100 rounded"
+                onClick={handleCloseModal}
+                className="p-1.5 hover:bg-gray-200 rounded-lg transition-colors"
                 aria-label="Close"
               >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
-                  className="h-5 w-5"
+                  className="h-5 w-5 text-gray-500"
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"
@@ -74,16 +330,20 @@ export default function Home() {
               </button>
             </div>
 
-            <div className="border-b">
-              <div className="flex">
+            <div className="border-b bg-white">
+              <div className="flex overflow-x-auto">
                 {TABS.map((tab) => (
                   <button
                     key={tab}
-                    onClick={() => setActiveTab(tab)}
-                    className={`px-4 py-3 text-sm font-medium transition-colors ${
+                    onClick={() => {
+                      setActiveTab(tab);
+                      setShowForm(false);
+                      setEditingItem(null);
+                    }}
+                    className={`px-5 py-3 text-sm font-medium whitespace-nowrap transition-colors border-b-2 ${
                       activeTab === tab
-                        ? "text-blue-600 border-b-2 border-blue-600"
-                        : "text-gray-500 hover:text-gray-700"
+                        ? "text-blue-600 border-blue-600 bg-blue-50/50"
+                        : "text-gray-500 border-transparent hover:text-gray-700 hover:bg-gray-50"
                     }`}
                   >
                     {tab}
@@ -92,10 +352,8 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="p-6">
-              <p className="text-gray-500 text-center">
-                {activeTab} settings content
-              </p>
+            <div className="flex-1 overflow-y-auto p-5 bg-gray-50">
+              {renderTabContent()}
             </div>
           </div>
         </div>
