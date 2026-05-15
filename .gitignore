@@ -1,0 +1,5 @@
+.venv/
+*.log
+*.pyc
+node_modules/
+.next/
