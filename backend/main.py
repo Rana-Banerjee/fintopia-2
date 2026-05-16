@@ -85,7 +85,7 @@ class AssetsLiabilities(Base):
     __tablename__ = "assets_liabilities"
 
     asset_liability_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    name = Column(String, unique=True, index=True)
+    name = Column(String, index=True)
     type = Column(Enum(AssetLiabilityType))
     sub_type = Column(Enum(AssetLiabilitySubType))
     annual_appreciation_percentage = Column(Integer, nullable=True)
@@ -99,7 +99,7 @@ class IncomeExpenses(Base):
     __tablename__ = "income_expenses"
 
     income_expense_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    name = Column(String, unique=True, index=True)
+    name = Column(String, index=True)
     type = Column(Enum(IncomeExpenseType))
     application_frequency = Column(String, nullable=True)
     annual_appreciation = Column(Integer, nullable=True)
@@ -120,7 +120,7 @@ class LoanDetails(Base):
     __tablename__ = "loan_details"
 
     loan_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    name = Column(String, unique=True, index=True)
+    name = Column(String, index=True)
     interest_rate = Column(Integer)
     emi_start_month = Column(Integer)
     emi_start_year = Column(Integer)
@@ -132,6 +132,9 @@ class LoanDetails(Base):
     )
     associated_income_expense_id = Column(
         Integer, ForeignKey("income_expenses.income_expense_id"), nullable=True
+    )
+    emi_deduction_from = Column(
+        Integer, ForeignKey("assets_liabilities.asset_liability_id"), nullable=True
     )
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -154,7 +157,7 @@ class Events(Base):
     __tablename__ = "events"
 
     event_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    event_name = Column(String, unique=True, index=True)
+    event_name = Column(String, index=True)
     start_month = Column(Integer)
     end_month = Column(Integer)
     no_occurences = Column(Integer)
@@ -475,11 +478,58 @@ def get_loan_details(db: Session = Depends(get_db)):
 
 @app.post("/api/loans", response_model=LoanDetailsResponse)
 def create_loan_detail(obj: LoanDetailsCreate, db: Session = Depends(get_db)):
-    db_obj = LoanDetails(**obj.model_dump())
-    db.add(db_obj)
-    db.commit()
-    db.refresh(db_obj)
-    return db_obj
+    liability_name = f"{obj.name}_Outstanding"
+    emi_name = f"{obj.name}_EMI"
+    liability = AssetsLiabilities(
+        name=liability_name,
+        type=AssetLiabilityType.liability,
+        sub_type=AssetLiabilitySubType.fixed,
+        annual_appreciation_percentage=None,
+        appreciation_frequency=None,
+        is_loan=True,
+    )
+    db.add(liability)
+    db.flush()  # assigns liability.asset_liability_id
+
+    expense = IncomeExpenses(
+        name=emi_name,
+        type=IncomeExpenseType.expense,
+        application_frequency="monthly",
+        annual_appreciation=None,
+        appreciation_frequency=None,
+        start_month=obj.emi_start_month,
+        start_year=obj.emi_start_year,
+        end_month=obj.emi_end_month,
+        end_year=obj.emi_end_year,
+        associated_asset_id=liability.asset_liability_id,
+        is_loan=True,
+    )
+    db.add(expense)
+    db.flush()  # assigns expense.income_expense_id
+
+    loan = LoanDetails(
+        name=obj.name,
+        interest_rate=obj.interest_rate,
+        emi_start_month=obj.emi_start_month,
+        emi_start_year=obj.emi_start_year,
+        emi_end_month=obj.emi_end_month,
+        emi_end_year=obj.emi_end_year,
+        emi_value=obj.emi_value,
+        associated_asset_liability_id=liability.asset_liability_id,
+        associated_income_expense_id=expense.income_expense_id,
+    )
+    db.add(loan)
+
+    try:
+        db.commit()
+        db.refresh(loan)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail="Loan or associated record already exists."
+        )
+    return loan
 
 
 @app.put("/api/loans/{id}", response_model=LoanDetailsResponse)
@@ -487,6 +537,21 @@ def update_loan_detail(id: int, obj: LoanDetailsUpdate, db: Session = Depends(ge
     db_obj = db.query(LoanDetails).filter(LoanDetails.loan_id == id).first()
     if not db_obj:
         raise HTTPException(status_code=404, detail="Loan not found")
+    asset_id = db_obj.associated_asset_liability_id
+    expense_id = db_obj.associated_income_expense_id
+
+    if asset_id:
+        asset = db.query(AssetsLiabilities).filter(AssetsLiabilities.asset_liability_id == asset_id).first()
+        if asset:
+            asset.name = f"{obj.name}_Outstanding"
+    if expense_id:
+        expense = db.query(IncomeExpenses).filter(IncomeExpenses.income_expense_id == expense_id).first()
+        if expense:
+            expense.name = f"{obj.name}_EMI"
+            expense.start_month = obj.emi_start_month
+            expense.start_year = obj.emi_start_year
+            expense.end_month = obj.emi_end_month
+            expense.end_year = obj.emi_end_year
     for key, value in obj.model_dump().items():
         setattr(db_obj, key, value)
     db.commit()
@@ -499,8 +564,23 @@ def delete_loan_detail(id: int, db: Session = Depends(get_db)):
     db_obj = db.query(LoanDetails).filter(LoanDetails.loan_id == id).first()
     if not db_obj:
         raise HTTPException(status_code=404, detail="Loan not found")
-    db.delete(db_obj)
-    db.commit()
+    
+    asset_id = db_obj.associated_asset_liability_id
+    expense_id = db_obj.associated_income_expense_id
+    try:
+        db.delete(db_obj)
+        if asset_id:
+            asset = db.query(AssetsLiabilities).filter(AssetsLiabilities.asset_liability_id == asset_id).first()
+            if asset:
+                db.delete(asset)
+        if expense_id:
+            expense = db.query(IncomeExpenses).filter(IncomeExpenses.income_expense_id == expense_id).first()
+            if expense:
+                db.delete(expense)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Error deleting loan and associated records")
     return {"message": "Deleted successfully"}
 
 
