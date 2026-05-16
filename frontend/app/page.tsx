@@ -228,6 +228,7 @@ export default function Home() {
                 setEditingItem(null);
               }}
               editItem={editingItem as Loan | undefined}
+              assets={currentAssets}
             />
           );
       }

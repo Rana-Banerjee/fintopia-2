@@ -3,17 +3,20 @@
 import { useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { Loan, MONTHS } from '../types';
+import { AssetLiability} from '../types';
+
 
 interface Props {
   onSubmit: (item: Loan) => void;
   onCancel: () => void;
   editItem?: Loan;
+  assets?: AssetLiability[];
 }
 
 const currentYear = new Date().getFullYear();
 const years = Array.from({ length: 15 }, (_, i) => currentYear + i);
 
-export default function LoanForm({ onSubmit, onCancel, editItem }: Props) {
+export default function LoanForm({ onSubmit, onCancel, editItem, assets = [] }: Props) {
   const [name, setName] = useState(editItem?.name || '');
   const [interestRate, setInterestRate] = useState(editItem?.interestRate?.toString() || '0');
   const [emiStartMonth, setEmiStartMonth] = useState(editItem?.emiStartMonth ?? 0);
@@ -21,6 +24,7 @@ export default function LoanForm({ onSubmit, onCancel, editItem }: Props) {
   const [emiEndMonth, setEmiEndMonth] = useState(editItem?.emiEndMonth ?? 0);
   const [emiEndYear, setEmiEndYear] = useState(editItem?.emiEndYear ?? currentYear + 1);
   const [emiValue, setEmiValue] = useState(editItem?.emiValue?.toString() || '0');
+  const [associatedAsset, setAssociatedAsset] = useState(editItem?.associatedAsset || '');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,6 +37,7 @@ export default function LoanForm({ onSubmit, onCancel, editItem }: Props) {
       emiEndMonth,
       emiEndYear,
       emiValue: parseFloat(emiValue) || 0,
+      associatedAsset,
       position: editItem?.position ?? Date.now(),
     });
   };
@@ -40,6 +45,8 @@ export default function LoanForm({ onSubmit, onCancel, editItem }: Props) {
   const inputClass = "w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm";
   const labelClass = "block text-sm font-medium text-gray-700 mb-1";
   const selectClass = `${inputClass} appearance-none bg-white`;
+
+  const assetOptions = assets ?? [];
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -131,6 +138,20 @@ export default function LoanForm({ onSubmit, onCancel, editItem }: Props) {
           className={inputClass}
           placeholder="e.g., 25000"
         />
+      </div>
+
+      <div>
+        <label className={labelClass}>Associated Asset</label>
+        <select
+          value={associatedAsset}
+          onChange={(e) => setAssociatedAsset(e.target.value)}
+          className={selectClass}
+        >
+          <option value="">None</option>
+          {assetOptions.filter(a => a.type === 'Asset').map((a) => (
+            <option key={a.id} value={a.id}>{a.name}</option>
+          ))}
+        </select>
       </div>
 
       <div className="flex gap-3 pt-2">
