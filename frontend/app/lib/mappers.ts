@@ -1,4 +1,4 @@
-import { AssetLiability, AssetLiabilityType, AssetSubType, AppreciationFrequency, IncomeExpense, IncomeExpenseType, AccrualFrequency } from '../types';
+import { AssetLiability, AssetLiabilityType, AssetSubType, AppreciationFrequency, IncomeExpense, IncomeExpenseType, AccrualFrequency, Loan } from '../types';
 
 export type BackendAssetLiabilityType = 'asset' | 'liability';
 export type BackendAssetSubType = 'liquid' | 'semi_liquid' | 'fixed';
@@ -32,6 +32,19 @@ interface BackendIncomeExpenseResponse {
   is_loan: boolean;
   created_at: string;
   updated_at: string;
+}
+
+interface BackendLoanResponse {
+  loan_id: number;
+  name: string;
+  interest_rate: number | null;
+  emi_start_month: number;
+  emi_start_year: number;
+  emi_end_month: number | null;
+  emi_end_year: number | null;
+  emi_value: number | null;
+  created_at?: string;
+  updated_at?: string;
 }
 
 const mapAppreciationFrequency = (freq: AppreciationFrequency | string): BackendAppreciationFrequency => {
@@ -141,5 +154,31 @@ export const fromBackendIncomeExpense = (data: BackendIncomeExpenseResponse): In
     endYear: data.end_year,
     associatedAsset: data.associated_asset_id?.toString() ?? '',
     position: data.income_expense_id,
+  };
+};
+
+export const fromBackendLoan = (data: BackendLoanResponse): Loan => {
+  return {
+    id: data.loan_id.toString(),
+    name: data.name,
+    interestRate: data.interest_rate ?? 0,
+    emiStartMonth: data.emi_start_month,
+    emiStartYear: data.emi_start_year,
+    emiEndMonth: data.emi_end_month ?? 0,
+    emiEndYear: data.emi_end_year ?? 0,
+    emiValue: data.emi_value ?? 0,
+    position: data.loan_id,
+  };
+};
+
+export const toBackendLoan = (item: Loan) => {
+  return {
+    name: item.name,
+    interest_rate: item.interestRate ?? null,
+    emi_start_month: item.emiStartMonth,
+    emi_start_year: item.emiStartYear,
+    emi_end_month: item.emiEndMonth ?? null,
+    emi_end_year: item.emiEndYear ?? null,
+    emi_value: item.emiValue ?? null,
   };
 };

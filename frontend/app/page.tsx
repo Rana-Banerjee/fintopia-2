@@ -1,7 +1,6 @@
 "use client";
 
-import { useState } from 'react';
-import { useLocalStorage } from './hooks/useLocalStorage';
+import { useState, useEffect } from 'react';
 import { AssetLiability, IncomeExpense, Loan } from './types';
 import AssetLiabilityForm from './components/AssetLiabilityForm';
 import IncomeExpenseForm from './components/IncomeExpenseForm';
@@ -9,6 +8,19 @@ import LoanForm from './components/LoanForm';
 import SortableAssetList from './components/SortableList';
 import SortableIncomeExpenseList from './components/SortableIncomeExpenseList';
 import SortableLoanList from './components/SortableLoanList';
+import {
+  createAssetLiability,
+  updateAssetLiability,
+  deleteAssetLiability,
+  createIncomeExpense,
+  updateIncomeExpense,
+  createLoan,
+  updateLoan,
+  deleteLoan,
+  fetchAssetsLiabilities,
+  fetchIncomeExpenses,
+  fetchLoans,
+} from './services/api';
 
 const TABS = ["Assets", "Liabilities", "Incomes", "Expenses", "Loans"] as const;
 
@@ -21,46 +33,82 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<TabType>("Assets");
   const [showForm, setShowForm] = useState(false);
   const [editingItem, setEditingItem] = useState<EditableItem>(null);
+  const [apiError, setApiError] = useState<string | null>(null);
 
-  const [assetsLiabilities, setAssetsLiabilities] = useLocalStorage<AssetLiability[]>('fintopia-assets-liabilities', []);
-  const [incomesExpenses, setIncomesExpenses] = useLocalStorage<IncomeExpense[]>('fintopia-incomes-expenses', []);
-  const [loans, setLoans] = useLocalStorage<Loan[]>('fintopia-loans', []);
+  const [assetsLiabilities, setAssetsLiabilities] = useState<AssetLiability[]>([]);
+  const [incomesExpenses, setIncomesExpenses] = useState<IncomeExpense[]>([]);
+  const [loans, setLoans] = useState<Loan[]>([]);
 
   const currentAssets = assetsLiabilities.filter((a) => a.type === 'Asset');
   const currentLiabilities = assetsLiabilities.filter((a) => a.type === 'Liability');
 
-  const handleAssetLiabilitySubmit = (item: AssetLiability) => {
-    if (editingItem) {
-      setAssetsLiabilities((prev) =>
-        prev.map((a) => (a.id === item.id ? item : a))
-      );
-    } else {
-      setAssetsLiabilities((prev) => [...prev, item]);
+  useEffect(() => {
+    async function loadData() {
+      const assets = await fetchAssetsLiabilities();
+      const incomes = await fetchIncomeExpenses();
+      const loansData = await fetchLoans();
+      setAssetsLiabilities(assets);
+      setIncomesExpenses(incomes);
+      setLoans(loansData);
     }
-    setShowForm(false);
-    setEditingItem(null);
+    loadData().catch(console.error);
+  }, []);
+
+  const handleAssetLiabilitySubmit = async (item: AssetLiability) => {
+    setApiError(null);
+    try {
+      if (editingItem) {
+        await updateAssetLiability(item);
+      } else {
+        await createAssetLiability(item);
+      }
+      // refresh list from backend after mutation
+      const assets = await fetchAssetsLiabilities();
+      setAssetsLiabilities(assets);
+      setShowForm(false);
+      setEditingItem(null);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Something went wrong';
+      setApiError(message);
+      // show UI error/notification as needed
+    }
   };
 
-  const handleIncomeExpenseSubmit = (item: IncomeExpense) => {
-    if (editingItem) {
-      setIncomesExpenses((prev) =>
-        prev.map((i) => (i.id === item.id ? item : i))
-      );
-    } else {
-      setIncomesExpenses((prev) => [...prev, item]);
+  const handleIncomeExpenseSubmit = async (item: IncomeExpense) => {
+    setApiError(null);
+    try {
+      if (editingItem) {
+        await updateIncomeExpense(item);
+      } else {
+        await createIncomeExpense(item);
+      }
+      // refresh list from backend after mutation
+      const incomes = await fetchIncomeExpenses();
+      setIncomesExpenses(incomes);
+      setShowForm(false);
+      setEditingItem(null);
+    } catch (err) {
+      console.error('Income/Expense submit failed', err);
+      setApiError('Income/Expense submit failed');
     }
-    setShowForm(false);
-    setEditingItem(null);
   };
 
-  const handleLoanSubmit = (item: Loan) => {
-    if (editingItem) {
-      setLoans((prev) => prev.map((l) => (l.id === item.id ? item : l)));
-    } else {
-      setLoans((prev) => [...prev, item]);
+  const handleLoanSubmit = async (item: Loan) => {
+    setApiError(null);
+    try {
+      if (editingItem) {
+        await updateLoan(item);
+      } else {
+        await createLoan(item);
+      }
+      const loansData = await fetchLoans();
+      setLoans(loansData);
+      setShowForm(false);
+      setEditingItem(null);
+    } catch (err) {
+      console.error('Loan submit failed', err);
+      setApiError('Loan submit failed');
     }
-    setShowForm(false);
-    setEditingItem(null);
   };
 
   const handleEdit = (item: EditableItem) => {
@@ -70,13 +118,24 @@ export default function Home() {
     }
   };
 
-  const handleDelete = (id: string, type: string) => {
-    if (type === 'asset-liability') {
-      setAssetsLiabilities((prev) => prev.filter((a) => a.id !== id));
-    } else if (type === 'income-expense') {
-      setIncomesExpenses((prev) => prev.filter((i) => i.id !== id));
-    } else if (type === 'loan') {
-      setLoans((prev) => prev.filter((l) => l.id !== id));
+  const handleDelete = async (id: string, type: string) => {
+    try {
+      if (type === 'asset-liability') {
+        await deleteAssetLiability(id);
+        const assets = await fetchAssetsLiabilities();
+        setAssetsLiabilities(assets);
+      } else if (type === 'income-expense') {
+        // if you implement deleteIncomeExpense, do same pattern:
+        // await deleteIncomeExpense(id);
+        const incomes = await fetchIncomeExpenses();
+        setIncomesExpenses(incomes);
+      } else if (type === 'loan') {
+        await deleteLoan(id);
+        const loansData = await fetchLoans();
+        setLoans(loansData);
+      }
+    } catch (err) {
+      console.error('Delete failed', err);
     }
   };
 
@@ -95,6 +154,40 @@ export default function Home() {
     setShowForm(false);
     setEditingItem(null);
   };
+
+  const listSection = <T extends AssetLiability | IncomeExpense | Loan>(
+    title: string,
+    items: T[],
+    type: string
+  ) => (
+    <div className="mb-4">
+      <h3 className="text-sm font-semibold text-gray-700 mb-2"></h3>
+      {type === 'asset-liability' && (
+        <SortableAssetList
+          items={items as AssetLiability[]}
+          onReorder={(newItems) => handleReorder('asset-liability', newItems)}
+          onEdit={handleEdit}
+          onDelete={(id) => handleDelete(id, 'asset-liability')}
+        />
+      )}
+      {type === 'income-expense' && (
+        <SortableIncomeExpenseList
+          items={items as IncomeExpense[]}
+          onReorder={(newItems) => handleReorder('income-expense', newItems)}
+          onEdit={handleEdit}
+          onDelete={(id) => handleDelete(id, 'income-expense')}
+        />
+      )}
+      {type === 'loan' && (
+        <SortableLoanList
+          items={items as Loan[]}
+          onReorder={(newItems) => handleReorder('loan', newItems)}
+          onEdit={handleEdit}
+          onDelete={(id) => handleDelete(id, 'loan')}
+        />
+      )}
+    </div>
+  );
 
   const renderTabContent = () => {
     if (showForm) {
@@ -139,36 +232,6 @@ export default function Home() {
           );
       }
     }
-
-    const listSection = <T extends AssetLiability | IncomeExpense | Loan>(title: string, items: T[], type: string) => (
-      <div className="mb-4">
-        <h3 className="text-sm font-semibold text-gray-700 mb-2"></h3>
-        {type === 'asset-liability' && (
-          <SortableAssetList
-            items={items as AssetLiability[]}
-            onReorder={(newItems) => handleReorder('asset-liability', newItems)}
-            onEdit={handleEdit}
-            onDelete={(id) => handleDelete(id, 'asset-liability')}
-          />
-        )}
-        {type === 'income-expense' && (
-          <SortableIncomeExpenseList
-            items={items as IncomeExpense[]}
-            onReorder={(newItems) => handleReorder('income-expense', newItems)}
-            onEdit={handleEdit}
-            onDelete={(id) => handleDelete(id, 'income-expense')}
-          />
-        )}
-        {type === 'loan' && (
-          <SortableLoanList
-            items={items as Loan[]}
-            onReorder={(newItems) => handleReorder('loan', newItems)}
-            onEdit={handleEdit}
-            onDelete={(id) => handleDelete(id, 'loan')}
-          />
-        )}
-      </div>
-    );
 
     switch (activeTab) {
       case 'Assets':
@@ -300,7 +363,6 @@ export default function Home() {
       {isModalOpen && (
         <div
           className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-          onClick={handleCloseModal}
         >
           <div
             className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[85vh] overflow-hidden flex flex-col"
@@ -355,6 +417,20 @@ export default function Home() {
             <div className="flex-1 overflow-y-auto p-5 bg-gray-50">
               {renderTabContent()}
             </div>
+          </div>
+        </div>
+      )}
+      {apiError && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-semibold text-red-700">Error</h3>
+            <p className="mt-3 text-sm text-gray-700">{apiError}</p>
+            <button
+              onClick={() => setApiError(null)}
+              className="mt-6 inline-flex justify-center rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200"
+            >
+              Cancel
+            </button>
           </div>
         </div>
       )}

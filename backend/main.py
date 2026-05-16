@@ -17,12 +17,14 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from datetime import datetime
 import enum
+from sqlalchemy.exc import IntegrityError
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    # allow_origins=["http://localhost:3000"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -82,8 +84,8 @@ class ImpactType(str, enum.Enum):
 class AssetsLiabilities(Base):
     __tablename__ = "assets_liabilities"
 
-    asset_liability_id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, primary_key=True, index=True)
+    asset_liability_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    name = Column(String, unique=True, index=True)
     type = Column(Enum(AssetLiabilityType))
     sub_type = Column(Enum(AssetLiabilitySubType))
     annual_appreciation_percentage = Column(Integer, nullable=True)
@@ -96,8 +98,8 @@ class AssetsLiabilities(Base):
 class IncomeExpenses(Base):
     __tablename__ = "income_expenses"
 
-    income_expense_id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, primary_key=True, index=True)
+    income_expense_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    name = Column(String, unique=True, index=True)
     type = Column(Enum(IncomeExpenseType))
     application_frequency = Column(String, nullable=True)
     annual_appreciation = Column(Integer, nullable=True)
@@ -117,8 +119,8 @@ class IncomeExpenses(Base):
 class LoanDetails(Base):
     __tablename__ = "loan_details"
 
-    loan_id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, primary_key=True, index=True)
+    loan_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    name = Column(String, unique=True, index=True)
     interest_rate = Column(Integer)
     emi_start_month = Column(Integer)
     emi_start_year = Column(Integer)
@@ -151,8 +153,8 @@ class MonthValues(Base):
 class Events(Base):
     __tablename__ = "events"
 
-    event_id = Column(Integer, primary_key=True, index=True)
-    event_name = Column(String,primary_key=True, index=True)
+    event_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    event_name = Column(String, unique=True, index=True)
     start_month = Column(Integer)
     end_month = Column(Integer)
     no_occurences = Column(Integer)
@@ -165,7 +167,7 @@ class Events(Base):
 class EventsImpact(Base):
     __tablename__ = "events_impact"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     event_id = Column(Integer, ForeignKey("events.event_id"))
     impact_type = Column(Enum(ImpactType))
     associated_item_id = Column(Integer)
@@ -363,8 +365,12 @@ def create_assets_liability(
 ):
     db_obj = AssetsLiabilities(**obj.model_dump())
     db.add(db_obj)
-    db.commit()
-    db.refresh(db_obj)
+    try:
+        db.commit()
+        db.refresh(db_obj)
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Asset/Liability with this name already exists")
     return db_obj
 
 
@@ -454,12 +460,12 @@ def delete_income_expense(id: int, db: Session = Depends(get_db)):
 
 
 # Loan Details CRUD
-@app.get("/api/loan-details", response_model=List[LoanDetailsResponse])
+@app.get("/api/loans", response_model=List[LoanDetailsResponse])
 def get_loan_details(db: Session = Depends(get_db)):
     return db.query(LoanDetails).all()
 
 
-# @app.get("/api/loan-details/{id}", response_model=LoanDetailsResponse)
+# @app.get("/api/loans/{id}", response_model=LoanDetailsResponse)
 # def get_loan_detail(id: int, db: Session = Depends(get_db)):
 #     obj = db.query(LoanDetails).filter(LoanDetails.loan_id == id).first()
 #     if not obj:
@@ -467,7 +473,7 @@ def get_loan_details(db: Session = Depends(get_db)):
 #     return obj
 
 
-@app.post("/api/loan-details", response_model=LoanDetailsResponse)
+@app.post("/api/loans", response_model=LoanDetailsResponse)
 def create_loan_detail(obj: LoanDetailsCreate, db: Session = Depends(get_db)):
     db_obj = LoanDetails(**obj.model_dump())
     db.add(db_obj)
@@ -476,7 +482,7 @@ def create_loan_detail(obj: LoanDetailsCreate, db: Session = Depends(get_db)):
     return db_obj
 
 
-@app.put("/api/loan-details/{id}", response_model=LoanDetailsResponse)
+@app.put("/api/loans/{id}", response_model=LoanDetailsResponse)
 def update_loan_detail(id: int, obj: LoanDetailsUpdate, db: Session = Depends(get_db)):
     db_obj = db.query(LoanDetails).filter(LoanDetails.loan_id == id).first()
     if not db_obj:
@@ -488,7 +494,7 @@ def update_loan_detail(id: int, obj: LoanDetailsUpdate, db: Session = Depends(ge
     return db_obj
 
 
-@app.delete("/api/loan-details/{id}")
+@app.delete("/api/loans/{id}")
 def delete_loan_detail(id: int, db: Session = Depends(get_db)):
     db_obj = db.query(LoanDetails).filter(LoanDetails.loan_id == id).first()
     if not db_obj:
